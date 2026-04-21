@@ -29,41 +29,15 @@ if not image_b64:
     return jsonify({'error': 'No image provided'}), 400
 
 cat_list = ', '.join([c['id'] + ':' + c['name'] + '(' + c['icon'] + ')' for c in categories])
+memory_json = json.dumps(item_memory)
 
-prompt = (
-    "You are a receipt reader for a Japanese household expense tracker.\n"
-    "Analyze this receipt image and extract all purchase data.\n\n"
-    "Available categories: " + cat_list + "\n\n"
-    "Known item->category mappings (use these if item matches): " + json.dumps(item_memory) + "\n\n"
-    "Return ONLY valid JSON, no other text, no markdown backticks:\n"
-    '{\n'
-    '  "store": "store name in English if possible, otherwise as-is",\n'
-    '  "date": "YYYY-MM-DD",\n'
-    '  "items": [\n'
-    '    { "name": "item name in English", "price": 123, "catId": "category_id" }\n'
-    '  ],\n'
-    '  "total": 999\n'
-    '}\n\n'
-    "Rules:\n"
-    "- name: translate Japanese to English when obvious. Keep brand names as-is.\n"
-    "- price: integer only, no symbols\n"
-    "- catId: pick the best match from available categories.\n"
-    "- total: grand total from receipt. If not visible, sum the items.\n"
-    "- date: extract from receipt (e.g. 2026-04-18). Use today if not found."
-)
+prompt = 'You are a receipt reader for a Japanese household expense tracker. Analyze this receipt image and extract all purchase data. Available categories: ' + cat_list + ' Known item-category mappings: ' + memory_json + ' Return ONLY valid JSON with no markdown: {"store": "store name", "date": "YYYY-MM-DD", "items": [{"name": "item name in English", "price": 123, "catId": "category_id"}], "total": 999} Rules: translate Japanese item names to English. price must be integer. Pick best catId from available categories. Extract date from receipt or use today. Sum items if total not visible.'
 
 payload = {
     'contents': [{
         'parts': [
-            {
-                'inline_data': {
-                    'mime_type': 'image/jpeg',
-                    'data': image_b64
-                }
-            },
-            {
-                'text': prompt
-            }
+            {'inline_data': {'mime_type': 'image/jpeg', 'data': image_b64}},
+            {'text': prompt}
         ]
     }],
     'generationConfig': {
@@ -90,7 +64,6 @@ try:
     text = result['candidates'][0]['content']['parts'][0]['text']
     text = text.replace('```json', '').replace('```', '').strip()
     parsed = json.loads(text)
-
     return jsonify(parsed)
 
 except requests.exceptions.Timeout:
