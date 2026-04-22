@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -45,42 +46,53 @@ def scan():
         }
     }
 
-    try:
-        resp = requests.post(
-            GEMINI_URL,
-            headers={
-                'Content-Type': 'application/json',
-                'x-goog-api-key': GEMINI_API_KEY,
-            },
-            json=payload,
-            timeout=45
-        )
-
-        if not resp.ok:
-            return jsonify({'error': 'Gemini HTTP ' + str(resp.status_code) + ': ' + resp.text}), 502
-
-        result = resp.json()
-
-        if 'candidates' not in result or not result['candidates']:
-            return jsonify({'error': 'No candidates: ' + json.dumps(result)}), 500
-
-        text = result['candidates'][0]['content']['parts'][0]['text']
-        text = text.replace('```json', '').replace('```', '').strip()
-
+    last_error = ''
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(5 * attempt)
         try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError as e:
-            return jsonify({'error': 'JSON parse failed: ' + str(e) + ' | Raw: ' + text[:300]}), 500
+            resp = requests.post(
+                GEMINI_URL,
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': GEMINI_API_KEY,
+                },
+                json=payload,
+                timeout=45
+            )
 
-        return jsonify(parsed)
+            if resp.status_code in [503, 429]:
+                last_error = 'Gemini HTTP ' + str(resp.status_code) + ' (retrying...): ' + resp.text
+                continue
 
-    except requests.exceptions.Timeout:
-        return jsonify({'error': 'Request timed out after 45s'}), 504
-    except requests.exceptions.RequestException as e:
-        error_body = e.response.text if hasattr(e, 'response') and e.response is not None else str(e)
-        return jsonify({'error': 'Request error: ' + error_body}), 502
-    except Exception as e:
-        return jsonify({'error': 'Unexpected: ' + str(e)}), 500
+            if not resp.ok:
+                return jsonify({'error': 'Gemini HTTP ' + str(resp.status_code) + ': ' + resp.text}), 502
+
+            result = resp.json()
+
+            if 'candidates' not in result or not result['candidates']:
+                return jsonify({'error': 'No candidates: ' + json.dumps(result)}), 500
+
+            text = result['candidates'][0]['content']['parts'][0]['text']
+            text = text.replace('```json', '').replace('```', '').strip()
+
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError as e:
+                return jsonify({'error': 'JSON parse failed: ' + str(e) + ' | Raw: ' + text[:300]}), 500
+
+            return jsonify(parsed)
+
+        except requests.exceptions.Timeout:
+            last_error = 'Timeout on attempt ' + str(attempt + 1)
+            continue
+        except requests.exceptions.RequestException as e:
+            error_body = e.response.text if hasattr(e, 'response') and e.response is not None else str(e)
+            return jsonify({'error': 'Request error: ' + error_body}), 502
+        except Exception as e:
+            return jsonify({'error': 'Unexpected: ' + str(e)}), 500
+
+    return jsonify({'error': 'Gemini unavailable after 3 attempts. ' + last_error}), 503
 
 
 if __name__ == '__main__':
