@@ -41,7 +41,7 @@ def scan():
         }],
         'generationConfig': {
             'temperature': 0.1,
-            'maxOutputTokens': 1024,
+            'maxOutputTokens': 2048,
         }
     }
 
@@ -53,25 +53,34 @@ def scan():
                 'x-goog-api-key': GEMINI_API_KEY,
             },
             json=payload,
-            timeout=30
+            timeout=45
         )
 
         if not resp.ok:
-            return jsonify({'error': 'Gemini error ' + str(resp.status_code) + ': ' + resp.text}), 502
+            return jsonify({'error': 'Gemini HTTP ' + str(resp.status_code) + ': ' + resp.text}), 502
 
         result = resp.json()
+
+        if 'candidates' not in result or not result['candidates']:
+            return jsonify({'error': 'No candidates in response: ' + json.dumps(result)}), 500
+
         text = result['candidates'][0]['content']['parts'][0]['text']
         text = text.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(text)
+
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as e:
+            return jsonify({'error': 'JSON parse failed: ' + str(e) + ' | Raw text: ' + text[:500]}), 500
+
         return jsonify(parsed)
 
     except requests.exceptions.Timeout:
-        return jsonify({'error': 'Request timed out'}), 504
+        return jsonify({'error': 'Request timed out after 45s'}), 504
     except requests.exceptions.RequestException as e:
         error_body = e.response.text if hasattr(e, 'response') and e.response is not None else str(e)
-        return jsonify({'error': 'Gemini API error: ' + error_body}), 502
-    except (KeyError, json.JSONDecodeError) as e:
-        return jsonify({'error': 'Failed to parse response: ' + str(e)}), 500
+        return jsonify({'error': 'Request error: ' + error_body}), 502
+    except Exception as e:
+        return jsonify({'error': 'Unexpected error: ' + str(e)}), 500
 
 
 if __name__ == '__main__':
