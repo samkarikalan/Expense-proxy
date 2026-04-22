@@ -62,7 +62,7 @@ def scan():
         result = resp.json()
 
         if 'candidates' not in result or not result['candidates']:
-            return jsonify({'error': 'No candidates in response: ' + json.dumps(result)}), 500
+            return jsonify({'error': 'No candidates: ' + json.dumps(result)}), 500
 
         text = result['candidates'][0]['content']['parts'][0]['text']
         text = text.replace('```json', '').replace('```', '').strip()
@@ -70,7 +70,7 @@ def scan():
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as e:
-            return jsonify({'error': 'JSON parse failed: ' + str(e) + ' | Raw text: ' + text[:500]}), 500
+            return jsonify({'error': 'JSON parse failed: ' + str(e) + ' | Raw: ' + text[:300]}), 500
 
         return jsonify(parsed)
 
@@ -80,7 +80,7 @@ def scan():
         error_body = e.response.text if hasattr(e, 'response') and e.response is not None else str(e)
         return jsonify({'error': 'Request error: ' + error_body}), 502
     except Exception as e:
-        return jsonify({'error': 'Unexpected error: ' + str(e)}), 500
+        return jsonify({'error': 'Unexpected: ' + str(e)}), 500
 
 
 if __name__ == '__main__':
